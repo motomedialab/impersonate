@@ -19,7 +19,7 @@ final class ImpersonationServiceProvider extends ServiceProvider
 
         // define our driver
         $this->app->alias(ImpersonationManager::class, 'impersonation');
-        $this->app->singleton(fn(): \Motomedialab\Impersonate\Managers\ImpersonationManager => new ImpersonationManager(fn () => Container::getInstance()));
+        $this->app->singleton(ImpersonationManager::class, fn(): ImpersonationManager => new ImpersonationManager(fn () => Container::getInstance()));
 
 
         // push our middleware onto web routing...
