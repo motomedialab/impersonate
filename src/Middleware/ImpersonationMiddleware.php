@@ -13,7 +13,7 @@ final class ImpersonationMiddleware
     public function handle(Request $request, Closure $next): mixed
     {
         /** @var ImpersonationManager $impersonation */
-        $impersonation = resolve('impersonation');
+        $impersonation = resolve('impersonate');
 
         if ($impersonation->isImpersonating()) {
             $guard = $impersonation->getAuthGuard();

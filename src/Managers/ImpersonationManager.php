@@ -9,14 +9,16 @@ use Illuminate\Foundation\Application;
 use Illuminate\Session\SessionManager;
 use Illuminate\Contracts\Auth\UserProvider;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Motomedialab\Impersonate\Events\ImpersonationBegun;
-use Motomedialab\Impersonate\Events\ImpersonationEnded;
+use Motomedialab\Impersonate\Events\ImpersonateBegun;
+use Motomedialab\Impersonate\Events\ImpersonateEnded;
 use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Exceptions\ImpersonationException;
 
-final class ImpersonationManager
+class ImpersonationManager
 {
     private string $impersonationKey = 'impersonationId';
+
+    private string $referrerKey = 'impersonatorReferrer';
 
     private readonly Application $app;
 
@@ -52,9 +54,10 @@ final class ImpersonationManager
     {
         $user = auth()->user();
         if ($user instanceof ImpersonatableUser) {
-            event(new ImpersonationEnded($user));
+            event(new ImpersonateEnded($user));
         }
 
+        $this->session()->remove($this->referrerKey);
         $this->session()->remove($this->impersonationKey);
     }
 
@@ -76,9 +79,10 @@ final class ImpersonationManager
         // check our current user is able to impersonate them.
         throw_unless($currentUser->canImpersonate($user), ImpersonationException::class, 'The currently authenticated user doesnt have permission to impersonate user with ID '.$userId);
 
+        $this->session()->put($this->referrerKey, url()->previous());
         $this->impersonate($userId, $guard);
 
-        event(new ImpersonationBegun($user, $currentUser));
+        event(new ImpersonateBegun($user, $currentUser));
     }
 
     public function findUser(int $id, ?string $guard = null): ?Authenticatable
@@ -98,7 +102,21 @@ final class ImpersonationManager
             return false;
         }
 
-        return $targetUser->canBeImpersonatedBy($currentUser) && $currentUser->canImpersonate($targetUser);
+        return $targetUser->canBeImpersonatedBy($currentUser)
+            && $currentUser->canImpersonate($targetUser);
+    }
+
+    public function getRedirectUrl(): string
+    {
+        // the URL to redirect to when beginning impersonation
+        return config('impersonate.redirect_to') ?? '/';
+    }
+
+    public function getReturnUrl(): string
+    {
+        return config('impersonate.return_to')
+            ?? $this->session()->get($this->referrerKey)
+            ?? '/';
     }
 
     /**

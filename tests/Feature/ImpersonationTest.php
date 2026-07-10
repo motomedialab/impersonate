@@ -10,8 +10,8 @@ use function Pest\Laravel\withSession;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
 use Motomedialab\Impersonate\Tests\Fixtures\User;
-use Motomedialab\Impersonate\Events\ImpersonationBegun;
-use Motomedialab\Impersonate\Events\ImpersonationEnded;
+use Motomedialab\Impersonate\Events\ImpersonateBegun;
+use Motomedialab\Impersonate\Events\ImpersonateEnded;
 
 beforeEach(function () {
     config(['database.default' => 'sqlite']);
@@ -60,7 +60,7 @@ it('can begin an impersonation session', function () {
         ->assertRedirect('/')
         ->assertSessionHas('impersonationId', 'web::'.$user->id);
 
-    Event::assertDispatched(ImpersonationBegun::class);
+    Event::assertDispatched(ImpersonateBegun::class);
 });
 
 it('can end an impersonation session', function () {
@@ -77,7 +77,7 @@ it('can end an impersonation session', function () {
         ->assertRedirect()
         ->assertSessionMissing('impersonationId');
 
-    Event::assertDispatched(ImpersonationEnded::class);
+    Event::assertDispatched(ImpersonateEnded::class);
 });
 
 it('prevents impersonation if user cannot impersonate', function () {
@@ -212,5 +212,57 @@ it('returns null on session exception', function () {
     });
 
     expect($manager->getUserId())->toBeNull();
+});
+
+it('redirects to the configured redirect_to path when beginning impersonation', function () {
+    config(['impersonate.redirect_to' => '/dashboard']);
+
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $user->id, 'guard' => 'web']))
+        ->assertRedirect('/dashboard');
+});
+
+it('redirects to the captured referrer URL when ending impersonation', function () {
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    withSession([
+        'impersonationId' => 'web::'.$user->id,
+        'impersonatorReferrer' => '/admin/users/123/edit'
+    ])
+        ->actingAs($user)
+        ->post(route('impersonate.end'))
+        ->assertRedirect('/admin/users/123/edit');
+});
+
+it('redirects to the configured return_to path when ending impersonation', function () {
+    config(['impersonate.return_to' => '/home']);
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    withSession([
+        'impersonationId' => 'web::'.$user->id,
+        'impersonatorReferrer' => '/admin/users/123/edit'
+    ])
+        ->actingAs($user)
+        ->post(route('impersonate.end'))
+        ->assertRedirect('/home');
 });
 

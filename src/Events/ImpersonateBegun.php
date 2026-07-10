@@ -6,9 +6,9 @@ namespace Motomedialab\Impersonate\Events;
 
 use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 
-final class ImpersonationEnded
+final class ImpersonateBegun
 {
-    public function __construct(public ImpersonatableUser $user)
+    public function __construct(public ImpersonatableUser $user, public ImpersonatableUser $impersonatedBy)
     {
         //
     }
