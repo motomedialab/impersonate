@@ -22,7 +22,7 @@ final class ImpersonationController
             return back()->withErrors(['error' => $impersonationException->getMessage()]);
         }
 
-        return redirect('/', 302);
+        return redirect()->to($driver->getRedirectUrl());
     }
 
     public function end(ImpersonationManager $driver): RedirectResponse
@@ -31,8 +31,10 @@ final class ImpersonationController
             return back();
         }
 
+        $returnUrl = $driver->getReturnUrl();
+
         $driver->endImpersonation();
 
-        return back();
+        return redirect()->to($returnUrl);
     }
 }

@@ -16,11 +16,19 @@ You can install the package via Composer by running the following command in you
 composer require motomedialab/impersonate
 ```
 
-The package will automatically register its service provider and push its middleware to your application's `web` group.
-
 ## ⚙️ Configuration
 
-### Implement the Contract on Your User Model
+### 1. Publish Configuration (Optional)
+
+You can publish the configuration file to customize the middleware groups to which the impersonation middleware is applied:
+
+```bash
+php artisan vendor:publish --tag="impersonate-config"
+```
+
+This will create a `config/impersonate.php` file where you can define the middleware groups (defaults to `['web', 'api']`).
+
+### 2. Implement the Contract on Your User Model
 
 To control who can impersonate others, and who can be impersonated, your `User` model (or authenticatable model) must implement the `Motomedialab\Impersonate\Contracts\ImpersonatableUser` contract. 
 
@@ -82,7 +90,7 @@ You can trigger impersonation from your administration dashboard using a simple 
 To stop impersonating and return to the administrator account, you can display a banner or button in your main layout:
 
 ```html
-@if(app('impersonation')->isImpersonating())
+@if(app('impersonate')->isImpersonating())
     <div class="impersonation-banner">
         <span>You are currently logged in as {{ auth()->user()->name }}</span>
         
@@ -98,30 +106,33 @@ To stop impersonating and return to the administrator account, you can display a
 
 ## 🔍 Checking Impersonation State
 
-You can use the `impersonation` singleton/alias to query the current impersonation status:
+You can use the `impersonate` singleton/alias to query the current impersonation status:
 
 ```php
 // Check if the current session is an impersonation session
-app('impersonation')->isImpersonating(); // returns bool
+app('impersonate')->isImpersonating(); // returns bool
 
 // Retrieve the ID of the impersonated user
-app('impersonation')->getUserId(); // returns int|null
+app('impersonate')->getUserId(); // returns int|null
 
 // Retrieve the auth guard being utilised
-app('impersonation')->getAuthGuard(); // returns string|null
+app('impersonate')->getAuthGuard(); // returns string|null
 ```
 
 ---
 
-## 🔔 Events
+## 🔔 Events and Auditing
 
-The package dispatches events when impersonation sessions start or end, allowing you to hook into them for auditing or logging purposes:
+Because impersonation is highly sensitive, the package dispatches events when sessions start or end, allowing you to build comprehensive audit logs for compliance:
 
-* **`Motomedialab\Impersonate\Events\ImpersonationBegun`**: Dispatched when an impersonation session starts successfully.
+* **`Motomedialab\Impersonate\Events\ImpersonateBegun`**: Dispatched when an impersonation session starts successfully.
   * Property `$user`: The target user being impersonated.
   * Property `$impersonatedBy`: The original administrator executing the impersonation.
-* **`Motomedialab\Impersonate\Events\ImpersonationEnded`**: Dispatched when the impersonation session is ended.
+* **`Motomedialab\Impersonate\Events\ImpersonateEnded`**: Dispatched when the impersonation session is ended.
   * Property `$user`: The user model that was being impersonated.
+
+> [!IMPORTANT]
+> **Audit Tip**: It is highly recommended to listen to these events and log them into your database or security log (e.g., `"User ID 1 (Admin) started impersonation session for User ID 42"`). This keeps a clear trail of administrative actions.
 
 ---
 
