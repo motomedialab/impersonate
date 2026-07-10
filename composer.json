@@ -20,8 +20,7 @@
         "phpunit/phpunit": "^10.0|^11.0|^12.0",
         "larastan/larastan": "^3.10",
         "laravel/pint": "^1.29",
-        "driftingly/rector-laravel": "^2.5",
-        "laravel/pao": "^1.1"
+        "driftingly/rector-laravel": "^2.5"
     },
     "scripts": {
         "test": "vendor/bin/pest"
