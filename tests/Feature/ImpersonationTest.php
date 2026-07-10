@@ -2,19 +2,18 @@
 
 declare(strict_types=1);
 
+use Motomedialab\Impersonate\Managers\ImpersonationManager;
 use function Pest\Laravel\actingAs;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use function Pest\Laravel\withSession;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Gate;
 use Motomedialab\Impersonate\Tests\Fixtures\User;
 use Motomedialab\Impersonate\Events\ImpersonationBegun;
 use Motomedialab\Impersonate\Events\ImpersonationEnded;
 
 beforeEach(function () {
-    Gate::define('impersonate', fn ($user = null) => true);
     config(['database.default' => 'sqlite']);
     config(['database.connections.sqlite' => [
         'driver' => 'sqlite',
@@ -163,3 +162,55 @@ it('ends impersonation if original user permissions are revoked', function () {
         ->assertSessionMissing('impersonationId')
         ->assertSee((string) $admin->id);
 });
+
+it('redirects back if ending impersonation when not impersonating', function () {
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->actingAs($user)
+        ->from('/previous-url')
+        ->post(route('impersonate.end'))
+        ->assertRedirect('/previous-url');
+});
+
+it('fails validation when current user is not impersonatable', function () {
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+    $nonImpersonatable = new \Motomedialab\Impersonate\Tests\Fixtures\NonImpersonatableUser();
+
+    $manager = app(ImpersonationManager::class);
+    $manager->impersonate($user->id, 'web');
+
+    expect($manager->validateImpersonationSession($nonImpersonatable))->toBeFalse();
+});
+
+it('fails validation when target user does not exist or is not impersonatable', function () {
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $manager = app(ImpersonationManager::class);
+    // Impersonate a non-existent user ID
+    $manager->impersonate(9999, 'web');
+
+    expect($manager->validateImpersonationSession($admin))->toBeFalse();
+});
+
+it('returns null on session exception', function () {
+    $manager = new ImpersonationManager(fn () => new class extends \Illuminate\Foundation\Application {
+        public function make($abstract, array $parameters = []) {
+            throw new \Exception('Session not available');
+        }
+        public function get($id) {
+            throw new \Exception('Session not available');
+        }
+    });
+
+    expect($manager->getUserId())->toBeNull();
+});
+

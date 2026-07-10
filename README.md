@@ -1,10 +1,14 @@
-# Laravel Impersonate
+# 🎭 [MotoMediaLab](https://motomedialab.com/) Impersonate
+
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/motomedialab/impersonate.svg?style=flat-square)](https://packagist.org/packages/motomedialab/impersonate)
+[![Total Downloads](https://img.shields.io/packagist/dt/motomedialab/impersonate.svg?style=flat-square)](https://packagist.org/packages/motomedialab/impersonate)
+![GitHub Actions](https://github.com/motomedialab/impersonate/actions/workflows/tests.yml/badge.svg)
 
 A sleek, robust, and customisable user impersonation package for Laravel applications. This package allows administrators to securely log in as other users, aiding in replication of bugs, general support, and user management.
 
 ---
 
-## Installation
+## 📦 Installation
 
 You can install the package via Composer by running the following command in your terminal:
 
@@ -14,11 +18,9 @@ composer require motomedialab/impersonate
 
 The package will automatically register its service provider and push its middleware to your application's `web` group.
 
----
+## ⚙️ Configuration
 
-## Configuration
-
-### 1. Implement the Contract on Your User Model
+### Implement the Contract on Your User Model
 
 To control who can impersonate others, and who can be impersonated, your `User` model (or authenticatable model) must implement the `Motomedialab\Impersonate\Contracts\ImpersonatableUser` contract. 
 
@@ -54,26 +56,9 @@ class User extends Authenticatable implements ImpersonatableUser
 }
 ```
 
-### 2. Define the Authorisation Gate
-
-Before starting an impersonation session, the package checks the `impersonate` gate. You must define this gate inside your `App\Providers\AppServiceProvider` (or `AuthServiceProvider`):
-
-```php
-use Illuminate\Support\Facades\Gate;
-use App\Models\User;
-
-public function boot(): void
-{
-    Gate::define('impersonate', function (User $user) {
-        // Return true if the user is authorised to access the impersonation features
-        return $user->is_admin === true;
-    });
-}
-```
-
 ---
 
-## Utilisation
+## 🚀 Utilisation
 
 ### Routing
 
@@ -101,7 +86,7 @@ To stop impersonating and return to the administrator account, you can display a
     <div class="impersonation-banner">
         <span>You are currently logged in as {{ auth()->user()->name }}</span>
         
-        <form action="{{ route('impersonate.end') }}" method="POST" style="display: inline;">
+        <form action="{{ route('impersonate.end') }}" method="POST">
             @csrf
             <button type="submit">Return to Admin</button>
         </form>
@@ -111,7 +96,7 @@ To stop impersonating and return to the administrator account, you can display a
 
 ---
 
-## Checking Impersonation State
+## 🔍 Checking Impersonation State
 
 You can use the `impersonation` singleton/alias to query the current impersonation status:
 
@@ -128,7 +113,7 @@ app('impersonation')->getAuthGuard(); // returns string|null
 
 ---
 
-## Events
+## 🔔 Events
 
 The package dispatches events when impersonation sessions start or end, allowing you to hook into them for auditing or logging purposes:
 
@@ -140,7 +125,7 @@ The package dispatches events when impersonation sessions start or end, allowing
 
 ---
 
-## Testing
+## 🧪 Testing
 
 To run the package test suite, ensure you have installed the development dependencies and run:
 
@@ -150,6 +135,6 @@ composer test
 
 ---
 
-## Licence
+## 📄 Licence
 
 This package is open-source software licensed under the [MIT Licence](LICENSE).
