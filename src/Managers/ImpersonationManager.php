@@ -18,7 +18,7 @@ final class ImpersonationManager
 {
     private string $impersonationKey = 'impersonationId';
 
-    private Application $app;
+    private readonly Application $app;
 
     public function __construct(\Closure $callback)
     {
@@ -50,39 +50,31 @@ final class ImpersonationManager
 
     public function endImpersonation(): void
     {
-        event(new ImpersonationEnded(auth()->user()));
+        $user = auth()->user();
+        if ($user instanceof ImpersonatableUser) {
+            event(new ImpersonationEnded($user));
+        }
+
         $this->session()->remove($this->impersonationKey);
     }
 
     public function beginImpersonation(Authenticatable $currentUser, int $userId, ?string $guard): void
     {
-        $guard = $guard ?? config('auth.defaults.guard');
+        $guard ??= config('auth.defaults.guard');
         $user = $this->findUser($userId, $guard);
 
-        if ($this->isImpersonating()) {
-            throw new ImpersonationException('An active impersonation session is already running');
-        }
+        throw_if($this->isImpersonating(), ImpersonationException::class, 'An active impersonation session is already running');
 
         // check if the current user can impersonate.
-        if (! $currentUser instanceof ImpersonatableUser) {
-            throw new ImpersonationException('The currently authenticated user must implement ImpersonatableUser');
-        }
+        throw_unless($currentUser instanceof ImpersonatableUser, ImpersonationException::class, 'The currently authenticated user must implement ImpersonatableUser');
 
         // check we have a user we can impersonate
-        if (! $user instanceof ImpersonatableUser) {
-            throw new ImpersonationException('The provided user cannot be impersonated');
-        }
+        throw_unless($user instanceof ImpersonatableUser, ImpersonationException::class, 'The provided user cannot be impersonated');
 
-        if (! $user->canBeImpersonatedBy($currentUser)) {
-            throw new ImpersonationException('The provided user cannot be impersonated');
-        }
+        throw_unless($user->canBeImpersonatedBy($currentUser), ImpersonationException::class, 'The provided user cannot be impersonated');
 
         // check our current user is able to impersonate them.
-        if (! $currentUser->canImpersonate($user)) {
-            throw new ImpersonationException(
-                'The currently authenticated user doesnt have permission to impersonate user with ID '.$userId
-            );
-        }
+        throw_unless($currentUser->canImpersonate($user), ImpersonationException::class, 'The currently authenticated user doesnt have permission to impersonate user with ID '.$userId);
 
         $this->impersonate($userId, $guard);
 
@@ -109,13 +101,16 @@ final class ImpersonationManager
         return $targetUser->canBeImpersonatedBy($currentUser) && $currentUser->canImpersonate($targetUser);
     }
 
+    /**
+     * @return array<int, string>|null
+     */
     private function getSessionData(): ?array
     {
         try {
             $data = $this->session()->get($this->impersonationKey);
 
-            return empty($data) ? null : explode('::', $data);
-        } catch (\Throwable $e) {
+            return empty($data) ? null : explode('::', (string) $data);
+        } catch (\Throwable) {
             //
         }
 
@@ -124,7 +119,7 @@ final class ImpersonationManager
 
     private function session(): SessionManager
     {
-        return $this->app->get('session');
+        return $this->app->get(SessionManager::class);
     }
 
     private function userProvider(?string $guard = null): UserProvider
