@@ -11,10 +11,12 @@ use Illuminate\Contracts\Auth\UserProvider;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Motomedialab\Impersonate\Events\ImpersonateBegun;
 use Motomedialab\Impersonate\Events\ImpersonateEnded;
+use Motomedialab\Impersonate\Contracts\CanImpersonate;
+use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
 use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Exceptions\ImpersonationException;
 
-class ImpersonationManager
+final class ImpersonationManager
 {
     private string $impersonationKey = 'impersonationId';
 
@@ -53,7 +55,7 @@ class ImpersonationManager
     public function endImpersonation(): void
     {
         $user = auth()->user();
-        if ($user instanceof ImpersonatableUser) {
+        if ($user instanceof CanBeImpersonated || $user instanceof ImpersonatableUser) {
             event(new ImpersonateEnded($user));
         }
 
@@ -69,10 +71,18 @@ class ImpersonationManager
         throw_if($this->isImpersonating(), ImpersonationException::class, 'An active impersonation session is already running');
 
         // check if the current user can impersonate.
-        throw_unless($currentUser instanceof ImpersonatableUser, ImpersonationException::class, 'The currently authenticated user must implement ImpersonatableUser');
+        throw_unless(
+            $currentUser instanceof CanImpersonate || $currentUser instanceof ImpersonatableUser,
+            ImpersonationException::class,
+            'The currently authenticated user must implement CanImpersonate'
+        );
 
         // check we have a user we can impersonate
-        throw_unless($user instanceof ImpersonatableUser, ImpersonationException::class, 'The provided user cannot be impersonated');
+        throw_unless(
+            $user instanceof CanBeImpersonated || $user instanceof ImpersonatableUser,
+            ImpersonationException::class,
+            'The provided user cannot be impersonated'
+        );
 
         throw_unless($user->canBeImpersonatedBy($currentUser), ImpersonationException::class, 'The provided user cannot be impersonated');
 
@@ -92,13 +102,13 @@ class ImpersonationManager
 
     public function validateImpersonationSession(?Authenticatable $currentUser): bool
     {
-        if (! $currentUser instanceof ImpersonatableUser) {
+        if (! $currentUser instanceof CanImpersonate && ! $currentUser instanceof ImpersonatableUser) {
             return false;
         }
 
         $targetUser = $this->findUser($this->getUserId(), $this->getAuthGuard());
 
-        if (! $targetUser instanceof ImpersonatableUser) {
+        if (! $targetUser instanceof CanBeImpersonated && ! $targetUser instanceof ImpersonatableUser) {
             return false;
         }
 
@@ -109,14 +119,13 @@ class ImpersonationManager
     public function getRedirectUrl(): string
     {
         // the URL to redirect to when beginning impersonation
-        return config('impersonate.redirect_to') ?? '/';
+        return config('impersonate.redirect_to', '/');
     }
 
     public function getReturnUrl(): string
     {
-        return config('impersonate.return_to')
-            ?? $this->session()->get($this->referrerKey)
-            ?? '/';
+        return config('impersonate.return_to', $this->session()->get($this->referrerKey)
+        ?? '/');
     }
 
     /**

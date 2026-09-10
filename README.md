@@ -28,11 +28,16 @@ php artisan vendor:publish --tag="impersonate-config"
 
 This will create a `config/impersonate.php` file where you can define the middleware groups (defaults to `['web', 'api']`).
 
-### 2. Implement the Contract on Your User Model
+### 2. Implement the Contracts on Your User Model(s)
 
-To control who can impersonate others, and who can be impersonated, your `User` model (or authenticatable model) must implement the `Motomedialab\Impersonate\Contracts\ImpersonatableUser` contract. 
+To control who can initiate impersonation and who can be impersonated, your authenticatable model(s) should implement the dedicated contracts:
 
-This contract requires the implementation of two methods:
+- **`Motomedialab\Impersonate\Contracts\CanImpersonate`**: Implemented by models permitted to initiate impersonation sessions (e.g., administrators, staff).
+- **`Motomedialab\Impersonate\Contracts\CanBeImpersonated`**: Implemented by models that can be impersonated (e.g., customers, regular members).
+
+#### Implementing Both on a Single Model
+
+If your application uses a single `User` model for both administrators and standard users, implement both contracts:
 
 ```php
 <?php
@@ -40,29 +45,55 @@ This contract requires the implementation of two methods:
 namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
+use Motomedialab\Impersonate\Contracts\CanImpersonate;
+use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
 
-class User extends Authenticatable implements ImpersonatableUser
+class User extends Authenticatable implements CanImpersonate, CanBeImpersonated
 {
     /**
      * Determine if this user is authorised to impersonate the target user.
      */
-    public function canImpersonate(ImpersonatableUser $user): bool
+    public function canImpersonate(CanBeImpersonated $user): bool
     {
-        // Example: Only admins are authorised to impersonate others
+        // Example: Only administrators are authorised to impersonate others
         return $this->is_admin === true;
     }
 
     /**
      * Determine if this user can be impersonated by the impersonator.
      */
-    public function canBeImpersonatedBy(ImpersonatableUser $user): bool
+    public function canBeImpersonatedBy(CanImpersonate $user): bool
     {
-        // Example: Do not allow impersonating other admins
+        // Example: Do not allow impersonating other administrators
         return ! $this->is_admin;
     }
 }
 ```
+
+#### Implementing on Separate Models
+
+If you maintain distinct models for staff and clients, you can implement only the relevant contract on each:
+
+```php
+class Admin extends Authenticatable implements CanImpersonate
+{
+    public function canImpersonate(CanBeImpersonated $user): bool
+    {
+        return true;
+    }
+}
+
+class Customer extends Authenticatable implements CanBeImpersonated
+{
+    public function canBeImpersonatedBy(CanImpersonate $user): bool
+    {
+        return true;
+    }
+}
+```
+
+> [!NOTE]
+> **Backwards Compatibility**: The previous unified `Motomedialab\Impersonate\Contracts\ImpersonatableUser` contract is deprecated, but remains fully supported for existing applications.
 
 ---
 

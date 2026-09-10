@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Motomedialab\Impersonate\Managers\ImpersonationManager;
 use function Pest\Laravel\actingAs;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
@@ -12,6 +11,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Motomedialab\Impersonate\Tests\Fixtures\User;
 use Motomedialab\Impersonate\Events\ImpersonateBegun;
 use Motomedialab\Impersonate\Events\ImpersonateEnded;
+use Motomedialab\Impersonate\Tests\Fixtures\AdminUser;
+use Motomedialab\Impersonate\Tests\Fixtures\CustomerUser;
+use Motomedialab\Impersonate\Managers\ImpersonationManager;
 
 beforeEach(function () {
     config(['database.default' => 'sqlite']);
@@ -180,7 +182,7 @@ it('fails validation when current user is not impersonatable', function () {
         'email' => 'user@example.com',
         'password' => 'password',
     ]);
-    $nonImpersonatable = new \Motomedialab\Impersonate\Tests\Fixtures\NonImpersonatableUser();
+    $nonImpersonatable = new Motomedialab\Impersonate\Tests\Fixtures\NonImpersonatableUser();
 
     $manager = app(ImpersonationManager::class);
     $manager->impersonate($user->id, 'web');
@@ -202,12 +204,14 @@ it('fails validation when target user does not exist or is not impersonatable', 
 });
 
 it('returns null on session exception', function () {
-    $manager = new ImpersonationManager(fn () => new class extends \Illuminate\Foundation\Application {
-        public function make($abstract, array $parameters = []) {
-            throw new \Exception('Session not available');
+    $manager = new ImpersonationManager(fn () => new class () extends Illuminate\Foundation\Application {
+        public function make($abstract, array $parameters = [])
+        {
+            throw new Exception('Session not available');
         }
-        public function get($id) {
-            throw new \Exception('Session not available');
+        public function get($id)
+        {
+            throw new Exception('Session not available');
         }
     });
 
@@ -266,3 +270,81 @@ it('redirects to the configured return_to path when ending impersonation', funct
         ->assertRedirect('/home');
 });
 
+it('supports CanImpersonate and CanBeImpersonated split contracts', function () {
+    Event::fake();
+
+    config(['auth.providers.users.model' => CustomerUser::class]);
+
+    $admin = AdminUser::create([
+        'email' => 'admin-split@example.com',
+        'password' => 'password',
+    ]);
+
+    $customer = CustomerUser::create([
+        'email' => 'customer-split@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $customer->id, 'guard' => 'web']))
+        ->assertRedirect('/')
+        ->assertSessionHas('impersonationId', 'web::'.$customer->id);
+
+    Event::assertDispatched(ImpersonateBegun::class, function (ImpersonateBegun $event) use ($customer, $admin) {
+        return $event->user->id === $customer->id && $event->impersonatedBy->id === $admin->id;
+    });
+
+    withSession(['impersonationId' => 'web::'.$customer->id])
+        ->actingAs($customer)
+        ->post(route('impersonate.end'))
+        ->assertRedirect()
+        ->assertSessionMissing('impersonationId');
+
+    Event::assertDispatched(ImpersonateEnded::class, function (ImpersonateEnded $event) use ($customer) {
+        return $event->user->id === $customer->id;
+    });
+});
+
+it('prevents split contract user from impersonating if canImpersonate returns false', function () {
+    config(['auth.providers.users.model' => CustomerUser::class]);
+
+    $admin = AdminUser::create([
+        'email' => 'unauthorised-admin@example.com',
+        'password' => 'password',
+        'can_impersonate' => false,
+    ]);
+
+    $customer = CustomerUser::create([
+        'email' => 'customer@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $customer->id]))
+        ->assertSessionMissing('impersonationId');
+});
+
+it('prevents impersonating split contract target if canBeImpersonatedBy returns false', function () {
+    config(['auth.providers.users.model' => CustomerUser::class]);
+
+    $admin = AdminUser::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $customer = CustomerUser::create([
+        'email' => 'protected-customer@example.com',
+        'password' => 'password',
+        'can_be_impersonated' => false,
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $customer->id]))
+        ->assertSessionMissing('impersonationId');
+});
