@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 namespace Motomedialab\Impersonate\Managers;
 
+use Closure;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Foundation\Application;
 use Illuminate\Session\SessionManager;
 use Illuminate\Contracts\Auth\UserProvider;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Motomedialab\Impersonate\Events\ImpersonateBegun;
-use Motomedialab\Impersonate\Events\ImpersonateEnded;
+use Motomedialab\Impersonate\Actions\EndImpersonation;
+use Motomedialab\Impersonate\Contracts\CanImpersonate;
+use Motomedialab\Impersonate\Actions\BeginImpersonation;
+use Motomedialab\Impersonate\Actions\DetermineReturnUrl;
+use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
+use Motomedialab\Impersonate\Actions\DetermineRedirectUrl;
 use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Exceptions\ImpersonationException;
+use Motomedialab\Impersonate\Actions\ValidateImpersonationSession;
 
-class ImpersonationManager
+final class ImpersonationManager
 {
     private string $impersonationKey = 'impersonationId';
 
@@ -22,7 +28,11 @@ class ImpersonationManager
 
     private readonly Application $app;
 
-    public function __construct(\Closure $callback)
+    private ?Closure $redirectToCallback = null;
+
+    private ?Closure $returnToCallback = null;
+
+    public function __construct(Closure $callback)
     {
         $this->app = $callback();
     }
@@ -50,39 +60,46 @@ class ImpersonationManager
         auth($guard)->onceUsingId($impersonationId);
     }
 
-    public function endImpersonation(): void
+    public function setReferrer(string $url): void
     {
-        $user = auth()->user();
-        if ($user instanceof ImpersonatableUser) {
-            event(new ImpersonateEnded($user));
-        }
-
-        $this->session()->remove($this->referrerKey);
-        $this->session()->remove($this->impersonationKey);
+        $this->session()->put($this->referrerKey, $url);
     }
 
-    public function beginImpersonation(Authenticatable $currentUser, int $userId, ?string $guard): void
+    public function getReferrer(): ?string
     {
+        $referrer = $this->session()->get($this->referrerKey);
+
+        return is_string($referrer) ? $referrer : null;
+    }
+
+    public function clearSession(): void
+    {
+        $this->session()->remove($this->referrerKey);
+        $this->session()->remove($this->impersonationKey);
+        $this->session()->regenerate();
+    }
+
+    public function endImpersonation(): void
+    {
+        $this->app->make(EndImpersonation::class)();
+    }
+
+    public function beginImpersonation(
+        CanImpersonate|ImpersonatableUser $actor,
+        int|CanBeImpersonated|ImpersonatableUser $target,
+        ?string $guard = null
+    ): void {
         $guard ??= config('auth.defaults.guard');
-        $user = $this->findUser($userId, $guard);
 
-        throw_if($this->isImpersonating(), ImpersonationException::class, 'An active impersonation session is already running');
+        $targetUser = $target instanceof CanBeImpersonated || $target instanceof ImpersonatableUser
+            ? $target
+            : $this->findUser($target, $guard);
 
-        // check if the current user can impersonate.
-        throw_unless($currentUser instanceof ImpersonatableUser, ImpersonationException::class, 'The currently authenticated user must implement ImpersonatableUser');
+        if (! $targetUser instanceof CanBeImpersonated && ! $targetUser instanceof ImpersonatableUser) {
+            throw new ImpersonationException('The provided user cannot be impersonated');
+        }
 
-        // check we have a user we can impersonate
-        throw_unless($user instanceof ImpersonatableUser, ImpersonationException::class, 'The provided user cannot be impersonated');
-
-        throw_unless($user->canBeImpersonatedBy($currentUser), ImpersonationException::class, 'The provided user cannot be impersonated');
-
-        // check our current user is able to impersonate them.
-        throw_unless($currentUser->canImpersonate($user), ImpersonationException::class, 'The currently authenticated user doesnt have permission to impersonate user with ID '.$userId);
-
-        $this->session()->put($this->referrerKey, url()->previous());
-        $this->impersonate($userId, $guard);
-
-        event(new ImpersonateBegun($user, $currentUser));
+        $this->app->make(BeginImpersonation::class)($actor, $targetUser, $guard);
     }
 
     public function findUser(int $id, ?string $guard = null): ?Authenticatable
@@ -90,33 +107,47 @@ class ImpersonationManager
         return $this->userProvider($guard)->retrieveById($id);
     }
 
-    public function validateImpersonationSession(?Authenticatable $currentUser): bool
+    public function validateImpersonationSession(?Authenticatable $actor): bool
     {
-        if (! $currentUser instanceof ImpersonatableUser) {
-            return false;
-        }
-
-        $targetUser = $this->findUser($this->getUserId(), $this->getAuthGuard());
-
-        if (! $targetUser instanceof ImpersonatableUser) {
-            return false;
-        }
-
-        return $targetUser->canBeImpersonatedBy($currentUser)
-            && $currentUser->canImpersonate($targetUser);
+        return $this->app->make(ValidateImpersonationSession::class)($actor);
     }
 
-    public function getRedirectUrl(): string
+    public function redirectTo(Closure $callback): void
     {
-        // the URL to redirect to when beginning impersonation
-        return config('impersonate.redirect_to') ?? '/';
+        $this->redirectToCallback = $callback;
     }
 
-    public function getReturnUrl(): string
+    public function returnTo(Closure $callback): void
     {
-        return config('impersonate.return_to')
-            ?? $this->session()->get($this->referrerKey)
-            ?? '/';
+        $this->returnToCallback = $callback;
+    }
+
+    public function getRedirectToCallback(): ?Closure
+    {
+        return $this->redirectToCallback;
+    }
+
+    public function getReturnToCallback(): ?Closure
+    {
+        return $this->returnToCallback;
+    }
+
+    public function flushCallbacks(): void
+    {
+        $this->redirectToCallback = null;
+        $this->returnToCallback = null;
+    }
+
+    public function getRedirectUrl(
+        CanBeImpersonated|ImpersonatableUser $target,
+        CanImpersonate|ImpersonatableUser $actor
+    ): string {
+        return $this->app->make(DetermineRedirectUrl::class)($target, $actor);
+    }
+
+    public function getReturnUrl(CanImpersonate|ImpersonatableUser $actor): string
+    {
+        return $this->app->make(DetermineReturnUrl::class)($actor);
     }
 
     /**
@@ -142,6 +173,8 @@ class ImpersonationManager
 
     private function userProvider(?string $guard = null): UserProvider
     {
+        $guard ??= config('auth.defaults.guard');
+
         return Auth::createUserProvider(config('auth.guards.'.$guard.'.provider'));
     }
 }

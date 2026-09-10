@@ -28,11 +28,16 @@ php artisan vendor:publish --tag="impersonate-config"
 
 This will create a `config/impersonate.php` file where you can define the middleware groups (defaults to `['web', 'api']`).
 
-### 2. Implement the Contract on Your User Model
+### 2. Implement the Contracts on Your User Model(s)
 
-To control who can impersonate others, and who can be impersonated, your `User` model (or authenticatable model) must implement the `Motomedialab\Impersonate\Contracts\ImpersonatableUser` contract. 
+To control who can initiate impersonation and who can be impersonated, your authenticatable model(s) should implement the dedicated contracts:
 
-This contract requires the implementation of two methods:
+- **`Motomedialab\Impersonate\Contracts\CanImpersonate`**: Implemented by models permitted to initiate impersonation sessions (e.g., administrators, staff).
+- **`Motomedialab\Impersonate\Contracts\CanBeImpersonated`**: Implemented by models that can be impersonated (e.g., customers, regular members).
+
+#### Implementing Both on a Single Model
+
+If your application uses a single `User` model for both administrators and standard users, implement both contracts:
 
 ```php
 <?php
@@ -40,29 +45,55 @@ This contract requires the implementation of two methods:
 namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
+use Motomedialab\Impersonate\Contracts\CanImpersonate;
+use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
 
-class User extends Authenticatable implements ImpersonatableUser
+class User extends Authenticatable implements CanImpersonate, CanBeImpersonated
 {
     /**
      * Determine if this user is authorised to impersonate the target user.
      */
-    public function canImpersonate(ImpersonatableUser $user): bool
+    public function canImpersonate(CanBeImpersonated $user): bool
     {
-        // Example: Only admins are authorised to impersonate others
+        // Example: Only administrators are authorised to impersonate others
         return $this->is_admin === true;
     }
 
     /**
      * Determine if this user can be impersonated by the impersonator.
      */
-    public function canBeImpersonatedBy(ImpersonatableUser $user): bool
+    public function canBeImpersonatedBy(CanImpersonate $user): bool
     {
-        // Example: Do not allow impersonating other admins
+        // Example: Do not allow impersonating other administrators
         return ! $this->is_admin;
     }
 }
 ```
+
+#### Implementing on Separate Models
+
+If you maintain distinct models for staff and clients, you can implement only the relevant contract on each:
+
+```php
+class Admin extends Authenticatable implements CanImpersonate
+{
+    public function canImpersonate(CanBeImpersonated $user): bool
+    {
+        return true;
+    }
+}
+
+class Customer extends Authenticatable implements CanBeImpersonated
+{
+    public function canBeImpersonatedBy(CanImpersonate $user): bool
+    {
+        return true;
+    }
+}
+```
+
+> [!NOTE]
+> **Backwards Compatibility**: The previous unified `Motomedialab\Impersonate\Contracts\ImpersonatableUser` contract is deprecated, but remains fully supported for existing applications.
 
 ---
 
@@ -100,6 +131,84 @@ To stop impersonating and return to the administrator account, you can display a
         </form>
     </div>
 @endif
+```
+
+---
+
+## 🧭 Customising Redirection Targets
+
+For enhanced security, the package avoids accepting arbitrary redirect destinations from client request payloads. Instead, redirection targets are determined entirely server-side using a clean resolution hierarchy:
+
+### When Beginning Impersonation
+
+1. **Model Hook**: Define an optional `impersonationRedirectTo()` method on the target model implementing `CanBeImpersonated`:
+   ```php
+   class Customer extends Authenticatable implements CanBeImpersonated
+   {
+       public function impersonationRedirectTo(): string
+       {
+           return route('customer.dashboard');
+       }
+   }
+   ```
+
+2. **Dynamic Callback**: Register a closure in a service provider using the `Impersonate` facade:
+   ```php
+   use Motomedialab\Impersonate\Facades\Impersonate;
+
+   Impersonate::redirectTo(function ($target, $actor) {
+       return $target->is_vendor ? '/vendor/portal' : '/dashboard';
+   });
+   ```
+
+3. **Configuration Fallback**: The `redirect_to` setting in `config/impersonate.php` (defaults to `'/'`).
+
+### When Ending Impersonation
+
+1. **Model Hook**: Define an optional `impersonationReturnTo()` method on your administrator model.
+2. **Dynamic Callback**: Register a closure via `Impersonate::returnTo(fn ($actor) => ...)`.
+3. **Captured Referrer**: Automatically returns to the previous URL where impersonation was started.
+4. **Configuration Fallback**: The `return_to` setting in `config/impersonate.php` (defaults to `'/'`).
+
+### ⚡ Invokable Actions & Customisation
+
+The package encapsulates its key lifecycle and business workflows into invokable action classes:
+
+- **`Motomedialab\Impersonate\Actions\BeginImpersonation`**: Validates permissions and initiates an impersonation session between two model instances (ideal for Filament, Nova, or Livewire).
+- **`Motomedialab\Impersonate\Actions\EndImpersonation`**: Dispatches events and cleans up impersonation session keys.
+- **`Motomedialab\Impersonate\Actions\ValidateImpersonationSession`**: Evaluates permissions dynamically on each request via the middleware.
+- **`Motomedialab\Impersonate\Actions\DetermineRedirectUrl`**: Resolves post-login redirection targets.
+- **`Motomedialab\Impersonate\Actions\DetermineReturnUrl`**: Resolves post-exit return destinations.
+
+#### Programmatic Invocation (Filament / Livewire / Commands)
+
+```php
+use App\Models\User;
+use Motomedialab\Impersonate\Actions\BeginImpersonation;
+use Motomedialab\Impersonate\Actions\EndImpersonation;
+
+// Initiate impersonation programmatically
+app(BeginImpersonation::class)(auth()->user(), $targetUser);
+
+// Terminate impersonation programmatically
+app(EndImpersonation::class)();
+```
+
+#### Container Rebinding in Tests & Applications
+
+Because all actions are resolved through Laravel's service container, you can rebind, extend, or mock any action:
+
+```php
+use Motomedialab\Impersonate\Actions\ValidateImpersonationSession;
+
+// Example: Enforce custom session timeouts or tenant verification
+app()->bind(ValidateImpersonationSession::class, fn () => new class {
+    public function __invoke($currentUser): bool
+    {
+        // Custom tenant or multi-factor checks...
+        return true;
+    }
+});
 ```
 
 ---

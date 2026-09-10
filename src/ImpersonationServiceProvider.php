@@ -15,7 +15,8 @@ final class ImpersonationServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(
-            __DIR__.'/../config/impersonate.php', 'impersonate'
+            __DIR__.'/../config/impersonate.php',
+            'impersonate'
         );
     }
 
@@ -27,14 +28,11 @@ final class ImpersonationServiceProvider extends ServiceProvider
             ], 'impersonate-config');
         }
 
-        // define our routes
         $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
 
-        // define our driver
         $this->app->alias(ImpersonationManager::class, 'impersonate');
         $this->app->singleton(ImpersonationManager::class, fn (): ImpersonationManager => new ImpersonationManager(fn () => Container::getInstance()));
 
-        // push our middleware onto routing groups...
         $router = $this->app->make(Router::class);
         $groups = (array) config('impersonate.middleware_groups', ['web', 'api']);
 

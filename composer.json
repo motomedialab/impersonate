@@ -10,7 +10,7 @@
         }
     ],
     "require": {
-        "php": "^8.2|^8.3|^8.4",
+        "php": "^8.2|^8.3|^8.4|^8.5",
         "illuminate/support": "^11.0|^12.0|^13.0"
     },
     "require-dev": {
@@ -39,7 +39,10 @@
         "laravel": {
             "providers": [
                 "Motomedialab\\Impersonate\\ImpersonationServiceProvider"
-            ]
+            ],
+            "aliases": {
+                "Impersonate": "Motomedialab\\Impersonate\\Facades\\Impersonate"
+            }
         }
     },
     "config": {
