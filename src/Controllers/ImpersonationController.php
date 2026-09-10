@@ -45,9 +45,12 @@ final class ImpersonationController
             return back();
         }
 
-        $actor = $request->user();
+        $actorGuard = $manager->getActorAuthGuard();
+        $actor = ($actorGuard ? $request->user($actorGuard) : null) ?? $request->user();
+
         if (! $actor instanceof CanImpersonate && ! $actor instanceof ImpersonatableUser) {
             $manager->endImpersonation();
+
             return redirect()->to('/');
         }
 

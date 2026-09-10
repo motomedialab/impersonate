@@ -17,15 +17,23 @@ final class ImpersonationMiddleware
 
         if ($manager->isImpersonating()) {
             $guard = $manager->getAuthGuard();
+            $actorGuard = $manager->getActorAuthGuard() ?? $guard;
 
-            if (! $manager->validateImpersonationSession($request->user($guard))) {
+            $actor = $request->user($actorGuard);
+
+            if (! $manager->validateImpersonationSession($actor)) {
                 $manager->endImpersonation();
 
                 return $next($request);
             }
 
             // apply the impersonation for the duration of this request.
-            $manager->impersonate($manager->getUserId(), $guard);
+            $manager->impersonate(
+                $manager->getUserId(),
+                $guard,
+                $manager->getActorUserId(),
+                $actorGuard
+            );
         }
 
         return $next($request);

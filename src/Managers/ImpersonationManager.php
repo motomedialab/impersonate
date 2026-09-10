@@ -54,9 +54,25 @@ final class ImpersonationManager
         return $this->getSessionData()[0] ?? null;
     }
 
-    public function impersonate(int $impersonationId, string $guard): void
+    public function getActorUserId(): ?int
     {
-        $this->session()->put($this->impersonationKey, $guard.'::'.$impersonationId);
+        $data = $this->getSessionData();
+
+        return array_key_exists(3, $data ?? []) ? (int) $data[3] : null;
+    }
+
+    public function getActorAuthGuard(): ?string
+    {
+        return $this->getSessionData()[2] ?? null;
+    }
+
+    public function impersonate(int $impersonationId, string $guard, ?int $actorId = null, ?string $actorGuard = null): void
+    {
+        $sessionValue = $actorId !== null && $actorGuard !== null
+            ? "{$guard}::{$impersonationId}::{$actorGuard}::{$actorId}"
+            : "{$guard}::{$impersonationId}";
+
+        $this->session()->put($this->impersonationKey, $sessionValue);
         auth($guard)->onceUsingId($impersonationId);
     }
 
@@ -87,7 +103,8 @@ final class ImpersonationManager
     public function beginImpersonation(
         CanImpersonate|ImpersonatableUser $actor,
         int|CanBeImpersonated|ImpersonatableUser $target,
-        ?string $guard = null
+        ?string $guard = null,
+        ?string $actorGuard = null,
     ): void {
         $guard ??= config('auth.defaults.guard');
 
@@ -99,7 +116,24 @@ final class ImpersonationManager
             throw new ImpersonationException('The provided user cannot be impersonated');
         }
 
-        $this->app->make(BeginImpersonation::class)($actor, $targetUser, $guard);
+        $this->app->make(BeginImpersonation::class)($actor, $targetUser, $guard, $actorGuard);
+    }
+
+    public function findActorGuard(Authenticatable $actor): string
+    {
+        /** @var array<string, mixed> $guards */
+        $guards = config('auth.guards', []);
+
+        foreach (array_keys($guards) as $guard) {
+            $guard = (string) $guard;
+            $guardInstance = Auth::guard($guard);
+
+            if ($guardInstance->check() && $guardInstance->id() === $actor->getAuthIdentifier()) {
+                return $guard;
+            }
+        }
+
+        return (string) config('auth.defaults.guard', 'web');
     }
 
     public function findUser(int $id, ?string $guard = null): ?Authenticatable

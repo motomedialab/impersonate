@@ -44,7 +44,7 @@ it('can begin an impersonation session', function () {
     actingAs($admin)
         ->post(route('impersonate.begin', ['id' => $user->id, 'guard' => 'web']))
         ->assertRedirect('/')
-        ->assertSessionHas('impersonationId', 'web::'.$user->id);
+        ->assertSessionHas('impersonationId', "web::{$user->id}::web::{$admin->id}");
 
     Event::assertDispatched(ImpersonateBegun::class);
 });
@@ -164,6 +164,32 @@ it('applies impersonation in middleware', function () {
     actingAs($admin)
         ->withSession(['impersonationId' => 'web::'.$user->id])
         ->get('test-middleware')
+        ->assertSee((string) $user->id);
+});
+
+it('applies cross guard impersonation in middleware when actor is on another guard', function () {
+    config(['auth.guards.admin' => [
+        'driver' => 'session',
+        'provider' => 'users',
+    ]]);
+
+    $admin = User::create([
+        'email' => 'admin-guard@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user-dealer@example.com',
+        'password' => 'password',
+    ]);
+
+    Route::get('test-cross-guard-middleware', function () {
+        return auth('web')->id();
+    })->middleware(['web', Motomedialab\Impersonate\Middleware\ImpersonationMiddleware::class]);
+
+    actingAs($admin, 'admin')
+        ->withSession(['impersonationId' => "web::{$user->id}::admin::{$admin->id}"])
+        ->get('test-cross-guard-middleware')
         ->assertSee((string) $user->id);
 });
 
@@ -315,7 +341,7 @@ it('supports CanImpersonate and CanBeImpersonated split contracts', function () 
     actingAs($admin)
         ->post(route('impersonate.begin', ['id' => $customer->id, 'guard' => 'web']))
         ->assertRedirect('/')
-        ->assertSessionHas('impersonationId', 'web::'.$customer->id);
+        ->assertSessionHas('impersonationId', "web::{$customer->id}::web::{$admin->id}");
 
     Event::assertDispatched(ImpersonateBegun::class, function (ImpersonateBegun $event) use ($customer, $admin) {
         return $event->user->id === $customer->id && $event->impersonatedBy->id === $admin->id;

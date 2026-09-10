@@ -24,7 +24,8 @@ final readonly class BeginImpersonation
     public function __invoke(
         CanImpersonate|ImpersonatableUser $actor,
         CanBeImpersonated|ImpersonatableUser $target,
-        ?string $guard = null
+        ?string $guard = null,
+        ?string $actorGuard = null,
     ): void {
         $guard ??= config('auth.defaults.guard');
 
@@ -41,7 +42,12 @@ final readonly class BeginImpersonation
         }
 
         $this->manager->setReferrer(url()->previous());
-        $this->manager->impersonate((int) $target->getAuthIdentifier(), $guard);
+        $this->manager->impersonate(
+            (int) $target->getAuthIdentifier(),
+            $guard,
+            (int) $actor->getAuthIdentifier(),
+            $actorGuard ?? $this->manager->findActorGuard($actor)
+        );
 
         event(new ImpersonateBegun($target, $actor));
     }
