@@ -44,7 +44,12 @@ it('can begin an impersonation session', function () {
     actingAs($admin)
         ->post(route('impersonate.begin', ['id' => $user->id, 'guard' => 'web']))
         ->assertRedirect('/')
-        ->assertSessionHas('impersonationId', "web::{$user->id}::web::{$admin->id}");
+        ->assertSessionHas('impersonationId', [
+            'target_id' => $user->id,
+            'target_guard' => 'web',
+            'actor_id' => $admin->id,
+            'actor_guard' => 'web',
+        ]);
 
     Event::assertDispatched(ImpersonateBegun::class);
 });
@@ -164,7 +169,12 @@ it('automatically detects actor on secondary guard when beginning impersonation'
 
     $this->post(route('impersonate.begin', ['id' => $user->id, 'guard' => 'web']))
         ->assertRedirect('/')
-        ->assertSessionHas('impersonationId', "web::{$user->id}::custom_admin::{$admin->id}");
+        ->assertSessionHas('impersonationId', [
+            'target_id' => $user->id,
+            'target_guard' => 'web',
+            'actor_id' => $admin->id,
+            'actor_guard' => 'custom_admin',
+        ]);
 });
 
 it('prevents impersonating a target that does not implement impersonation contracts', function () {
@@ -384,7 +394,12 @@ it('supports CanImpersonate and CanBeImpersonated split contracts', function () 
     actingAs($admin)
         ->post(route('impersonate.begin', ['id' => $customer->id, 'guard' => 'web']))
         ->assertRedirect('/')
-        ->assertSessionHas('impersonationId', "web::{$customer->id}::web::{$admin->id}");
+        ->assertSessionHas('impersonationId', [
+            'target_id' => $customer->id,
+            'target_guard' => 'web',
+            'actor_id' => $admin->id,
+            'actor_guard' => 'web',
+        ]);
 
     Event::assertDispatched(ImpersonateBegun::class, function (ImpersonateBegun $event) use ($customer, $admin) {
         return $event->user->id === $customer->id && $event->impersonatedBy->id === $admin->id;

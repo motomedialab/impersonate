@@ -61,3 +61,15 @@ it('falls back to default guard if actor is not authenticated on any guard', fun
 
     expect($manager->findActorGuard($actor))->toBe(config('auth.defaults.guard'));
 });
+
+it('returns actor user ID and actor auth guard from session', function () {
+    $manager = app(ImpersonationManager::class);
+
+    expect($manager->getActorUserId())->toBeNull()
+        ->and($manager->getActorAuthGuard())->toBeNull();
+
+    $manager->impersonate(10, 'web', 5, 'admin');
+
+    expect($manager->getActorUserId())->toBe(5)
+        ->and($manager->getActorAuthGuard())->toBe('admin');
+});

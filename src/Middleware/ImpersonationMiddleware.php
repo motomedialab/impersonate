@@ -6,6 +6,7 @@ namespace Motomedialab\Impersonate\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Motomedialab\Impersonate\Services\ActorResolver;
 use Motomedialab\Impersonate\Managers\ImpersonationManager;
 
 final class ImpersonationMiddleware
@@ -15,11 +16,14 @@ final class ImpersonationMiddleware
         /** @var ImpersonationManager $manager */
         $manager = resolve(ImpersonationManager::class);
 
-        if ($manager->isImpersonating()) {
-            $guard = $manager->getAuthGuard();
-            $actorGuard = $manager->getActorAuthGuard() ?? $guard;
+        $session = $manager->getSession();
 
-            $actor = $request->user($actorGuard);
+        if ($session !== null) {
+            $actorGuard = $session->actorGuard ?? $session->targetGuard;
+
+            /** @var ActorResolver $actorResolver */
+            $actorResolver = resolve(ActorResolver::class);
+            $actor = $actorResolver->resolve($request, $actorGuard);
 
             if (! $manager->validateImpersonationSession($actor)) {
                 $manager->endImpersonation();
@@ -27,12 +31,12 @@ final class ImpersonationMiddleware
                 return $next($request);
             }
 
-            // apply the impersonation for the duration of this request.
+            // Apply the impersonation for the duration of this request
             $manager->impersonate(
-                $manager->getUserId(),
-                $guard,
-                $manager->getActorUserId(),
-                $actorGuard
+                $session->targetId,
+                $session->targetGuard,
+                $session->actorId,
+                $session->actorGuard
             );
         }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Motomedialab\Impersonate\Actions;
 
+use Motomedialab\Impersonate\Services\ActorResolver;
 use Motomedialab\Impersonate\Events\ImpersonateBegun;
 use Motomedialab\Impersonate\Contracts\CanImpersonate;
 use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
@@ -13,9 +14,10 @@ use Motomedialab\Impersonate\Exceptions\ImpersonationException;
 
 final readonly class BeginImpersonation
 {
-    public function __construct(private ImpersonationManager $manager)
-    {
-        //
+    public function __construct(
+        private ImpersonationManager $manager,
+        private ActorResolver $actorResolver,
+    ) {
     }
 
     /**
@@ -46,7 +48,7 @@ final readonly class BeginImpersonation
             (int) $target->getAuthIdentifier(),
             $guard,
             (int) $actor->getAuthIdentifier(),
-            $actorGuard ?? $this->manager->findActorGuard($actor)
+            $actorGuard ?? $this->actorResolver->resolveGuard($actor)
         );
 
         event(new ImpersonateBegun($target, $actor));

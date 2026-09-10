@@ -17,6 +17,7 @@ use Motomedialab\Impersonate\Managers\ImpersonationManager;
  * @method static string|null getAuthGuard()
  * @method static int|null getActorUserId()
  * @method static string|null getActorAuthGuard()
+ * @method static \Motomedialab\Impersonate\ValueObjects\ImpersonationSession|null getSession()
  * @method static void impersonate(int $impersonationId, string $guard, ?int $actorId = null, ?string $actorGuard = null)
  * @method static void endImpersonation()
  * @method static void beginImpersonation(CanImpersonate|ImpersonatableUser $actor, int|CanBeImpersonated|ImpersonatableUser $target, ?string $guard = null, ?string $actorGuard = null)
