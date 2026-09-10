@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Motomedialab\Impersonate\Tests\Fixtures;
 
+use Motomedialab\Impersonate\Contracts\CanImpersonate;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
+use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
 
-final class User extends Authenticatable implements ImpersonatableUser
+final class User extends Authenticatable implements CanImpersonate, CanBeImpersonated
 {
     protected $table = 'users';
 
@@ -18,12 +19,12 @@ final class User extends Authenticatable implements ImpersonatableUser
         'can_be_impersonated' => 'boolean',
     ];
 
-    public function canImpersonate(ImpersonatableUser $user): bool
+    public function canImpersonate(CanBeImpersonated $user): bool
     {
         return (bool) ($this->can_impersonate ?? true);
     }
 
-    public function canBeImpersonatedBy(ImpersonatableUser $user): bool
+    public function canBeImpersonatedBy(CanImpersonate $user): bool
     {
         return (bool) ($this->can_be_impersonated ?? true);
     }

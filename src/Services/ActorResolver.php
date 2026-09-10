@@ -8,7 +8,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Motomedialab\Impersonate\Contracts\CanImpersonate;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 
 final class ActorResolver
 {
@@ -75,6 +74,6 @@ final class ActorResolver
 
     private function canImpersonate(?Authenticatable $user): bool
     {
-        return $user instanceof CanImpersonate || $user instanceof ImpersonatableUser;
+        return $user instanceof CanImpersonate;
     }
 }

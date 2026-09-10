@@ -9,7 +9,6 @@ use Illuminate\Http\RedirectResponse;
 use Motomedialab\Impersonate\Services\ActorResolver;
 use Motomedialab\Impersonate\Contracts\CanImpersonate;
 use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Managers\ImpersonationManager;
 use Motomedialab\Impersonate\Exceptions\ImpersonationException;
 
@@ -33,12 +32,12 @@ final class ImpersonationController
 
         $actor = $actorResolver->resolve($request, is_string($actorGuard) ? $actorGuard : null);
 
-        if (! $actor instanceof CanImpersonate && ! $actor instanceof ImpersonatableUser) {
+        if (! $actor instanceof CanImpersonate) {
             return back()->withErrors(['error' => 'The currently authenticated user cannot impersonate.']);
         }
 
         $target = $manager->findUser($id, $guard);
-        if (! $target instanceof CanBeImpersonated && ! $target instanceof ImpersonatableUser) {
+        if (! $target instanceof CanBeImpersonated) {
             return back()->withErrors(['error' => 'The target user cannot be impersonated.']);
         }
 
@@ -62,7 +61,7 @@ final class ImpersonationController
 
         $actor = $actorResolver->resolve($request, $manager->getActorAuthGuard());
 
-        if (! $actor instanceof CanImpersonate && ! $actor instanceof ImpersonatableUser) {
+        if (! $actor instanceof CanImpersonate) {
             $manager->endImpersonation();
 
             return redirect()->to('/');

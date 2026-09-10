@@ -8,7 +8,6 @@ use Motomedialab\Impersonate\Services\ActorResolver;
 use Motomedialab\Impersonate\Events\ImpersonateBegun;
 use Motomedialab\Impersonate\Contracts\CanImpersonate;
 use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Managers\ImpersonationManager;
 use Motomedialab\Impersonate\Exceptions\ImpersonationException;
 
@@ -24,8 +23,8 @@ final readonly class BeginImpersonation
      * @throws ImpersonationException
      */
     public function __invoke(
-        CanImpersonate|ImpersonatableUser $actor,
-        CanBeImpersonated|ImpersonatableUser $target,
+        CanImpersonate $actor,
+        CanBeImpersonated $target,
         ?string $guard = null,
         ?string $actorGuard = null,
     ): void {

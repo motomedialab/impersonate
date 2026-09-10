@@ -17,7 +17,6 @@ use Motomedialab\Impersonate\Actions\BeginImpersonation;
 use Motomedialab\Impersonate\Actions\DetermineReturnUrl;
 use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
 use Motomedialab\Impersonate\Actions\DetermineRedirectUrl;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Exceptions\ImpersonationException;
 use Motomedialab\Impersonate\ValueObjects\ImpersonationSession;
 use Motomedialab\Impersonate\Actions\ValidateImpersonationSession;
@@ -113,18 +112,18 @@ final class ImpersonationManager
     }
 
     public function beginImpersonation(
-        CanImpersonate|ImpersonatableUser $actor,
-        int|CanBeImpersonated|ImpersonatableUser $target,
+        CanImpersonate $actor,
+        int|CanBeImpersonated $target,
         ?string $guard = null,
         ?string $actorGuard = null,
     ): void {
         $guard ??= config('auth.defaults.guard');
 
-        $targetUser = $target instanceof CanBeImpersonated || $target instanceof ImpersonatableUser
+        $targetUser = $target instanceof CanBeImpersonated
             ? $target
             : $this->findUser($target, $guard);
 
-        if (! $targetUser instanceof CanBeImpersonated && ! $targetUser instanceof ImpersonatableUser) {
+        if (! $targetUser instanceof CanBeImpersonated) {
             throw new ImpersonationException('The provided user cannot be impersonated');
         }
 
@@ -173,13 +172,13 @@ final class ImpersonationManager
     }
 
     public function getRedirectUrl(
-        CanBeImpersonated|ImpersonatableUser $target,
-        CanImpersonate|ImpersonatableUser $actor
+        CanBeImpersonated $target,
+        CanImpersonate $actor
     ): string {
         return $this->app->make(DetermineRedirectUrl::class)($target, $actor);
     }
 
-    public function getReturnUrl(CanImpersonate|ImpersonatableUser $actor): string
+    public function getReturnUrl(CanImpersonate $actor): string
     {
         return $this->app->make(DetermineReturnUrl::class)($actor);
     }

@@ -7,7 +7,6 @@ namespace Motomedialab\Impersonate\Actions;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Motomedialab\Impersonate\Contracts\CanImpersonate;
 use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Managers\ImpersonationManager;
 
 final readonly class ValidateImpersonationSession
@@ -19,7 +18,7 @@ final readonly class ValidateImpersonationSession
 
     public function __invoke(?Authenticatable $actor): bool
     {
-        if (! $actor instanceof CanImpersonate && ! $actor instanceof ImpersonatableUser) {
+        if (! $actor instanceof CanImpersonate) {
             return false;
         }
 
@@ -29,7 +28,7 @@ final readonly class ValidateImpersonationSession
 
         $target = $this->manager->findUser($targetId, $this->manager->getAuthGuard());
 
-        if (! $target instanceof CanBeImpersonated && ! $target instanceof ImpersonatableUser) {
+        if (! $target instanceof CanBeImpersonated) {
             return false;
         }
 
