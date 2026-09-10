@@ -44,7 +44,12 @@ it('can begin an impersonation session', function () {
     actingAs($admin)
         ->post(route('impersonate.begin', ['id' => $user->id, 'guard' => 'web']))
         ->assertRedirect('/')
-        ->assertSessionHas('impersonationId', 'web::'.$user->id);
+        ->assertSessionHas('impersonationId', [
+            'target_id' => $user->id,
+            'target_guard' => 'web',
+            'actor_id' => $admin->id,
+            'actor_guard' => 'web',
+        ]);
 
     Event::assertDispatched(ImpersonateBegun::class);
 });
@@ -124,6 +129,54 @@ it('prevents impersonating a user that cannot be impersonated', function () {
         ->assertSessionMissing('impersonationId');
 });
 
+it('rejects an invalid actor_guard when beginning impersonation', function () {
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $user->id, 'actor_guard' => 'nonexistent_actor_guard']))
+        ->assertSessionHasErrors(['error' => 'The specified actor guard does not exist.']);
+});
+
+it('automatically detects actor on secondary guard when beginning impersonation', function () {
+    config(['auth.guards.custom_admin' => [
+        'driver' => 'session',
+        'provider' => 'users',
+    ]]);
+
+    $admin = User::create([
+        'email' => 'custom-admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'custom-target@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    auth('custom_admin')->login($admin);
+
+    $this->post(route('impersonate.begin', ['id' => $user->id, 'guard' => 'web']))
+        ->assertRedirect('/')
+        ->assertSessionHas('impersonationId', [
+            'target_id' => $user->id,
+            'target_guard' => 'web',
+            'actor_id' => $admin->id,
+            'actor_guard' => 'custom_admin',
+        ]);
+});
+
 it('prevents impersonating a target that does not implement impersonation contracts', function () {
     config(['auth.providers.users.model' => NonImpersonatableUser::class]);
 
@@ -164,6 +217,32 @@ it('applies impersonation in middleware', function () {
     actingAs($admin)
         ->withSession(['impersonationId' => 'web::'.$user->id])
         ->get('test-middleware')
+        ->assertSee((string) $user->id);
+});
+
+it('applies cross guard impersonation in middleware when actor is on another guard', function () {
+    config(['auth.guards.admin' => [
+        'driver' => 'session',
+        'provider' => 'users',
+    ]]);
+
+    $admin = User::create([
+        'email' => 'admin-guard@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user-dealer@example.com',
+        'password' => 'password',
+    ]);
+
+    Route::get('test-cross-guard-middleware', function () {
+        return auth('web')->id();
+    })->middleware(['web', Motomedialab\Impersonate\Middleware\ImpersonationMiddleware::class]);
+
+    actingAs($admin, 'admin')
+        ->withSession(['impersonationId' => "web::{$user->id}::admin::{$admin->id}"])
+        ->get('test-cross-guard-middleware')
         ->assertSee((string) $user->id);
 });
 
@@ -315,7 +394,12 @@ it('supports CanImpersonate and CanBeImpersonated split contracts', function () 
     actingAs($admin)
         ->post(route('impersonate.begin', ['id' => $customer->id, 'guard' => 'web']))
         ->assertRedirect('/')
-        ->assertSessionHas('impersonationId', 'web::'.$customer->id);
+        ->assertSessionHas('impersonationId', [
+            'target_id' => $customer->id,
+            'target_guard' => 'web',
+            'actor_id' => $admin->id,
+            'actor_guard' => 'web',
+        ]);
 
     Event::assertDispatched(ImpersonateBegun::class, function (ImpersonateBegun $event) use ($customer, $admin) {
         return $event->user->id === $customer->id && $event->impersonatedBy->id === $admin->id;

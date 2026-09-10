@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Motomedialab\Impersonate\Actions;
 
 use Motomedialab\Impersonate\Contracts\CanImpersonate;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Managers\ImpersonationManager;
 
 final readonly class DetermineReturnUrl
@@ -15,25 +14,33 @@ final readonly class DetermineReturnUrl
         //
     }
 
-    public function __invoke(CanImpersonate|ImpersonatableUser $actor): string
+    public function __invoke(CanImpersonate $actor): string
     {
-        // return the actor redirect if defined
         if (method_exists($actor, 'impersonationReturnTo')) {
-            $candidate = $actor->impersonationReturnTo();
-            if (is_string($candidate) && ! empty($candidate)) {
-                return $candidate;
+            $destination = $actor->impersonationReturnTo();
+            if (is_string($destination) && $destination !== '') {
+                return $destination;
             }
         }
 
-        // return the manager callback if defined
-        if (($callback = $this->manager->getReturnToCallback()) !== null) {
-            $candidate = $callback($actor);
-            if (is_string($candidate) && ! empty($candidate)) {
-                return $candidate;
+        $callback = $this->manager->getReturnToCallback();
+        if ($callback !== null) {
+            $destination = $callback($actor);
+            if (is_string($destination) && $destination !== '') {
+                return $destination;
             }
         }
 
-        // default fallback
-        return config('impersonate.return_to') ?? $this->manager->getReferrer() ?? '/';
+        $configured = config('impersonate.return_to');
+        if (is_string($configured) && $configured !== '') {
+            return $configured;
+        }
+
+        $referrer = $this->manager->getReferrer();
+        if (is_string($referrer) && $referrer !== '') {
+            return $referrer;
+        }
+
+        return '/';
     }
 }

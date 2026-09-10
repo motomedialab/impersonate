@@ -37,3 +37,39 @@ it('throws an exception if beginImpersonation target integer ID is not impersona
     expect(fn () => $manager->beginImpersonation($actor, $nonImpersonatable->id))
         ->toThrow(ImpersonationException::class, 'The provided user cannot be impersonated');
 });
+
+it('detects actor guard correctly when authenticated', function () {
+    $actor = User::create([
+        'email' => 'actor@example.com',
+        'password' => 'secret',
+    ]);
+
+    auth('web')->login($actor);
+
+    $manager = app(ImpersonationManager::class);
+
+    expect($manager->findActorGuard($actor))->toBe('web');
+});
+
+it('falls back to default guard if actor is not authenticated on any guard', function () {
+    $actor = User::create([
+        'email' => 'actor@example.com',
+        'password' => 'secret',
+    ]);
+
+    $manager = app(ImpersonationManager::class);
+
+    expect($manager->findActorGuard($actor))->toBe(config('auth.defaults.guard'));
+});
+
+it('returns actor user ID and actor auth guard from session', function () {
+    $manager = app(ImpersonationManager::class);
+
+    expect($manager->getActorUserId())->toBeNull()
+        ->and($manager->getActorAuthGuard())->toBeNull();
+
+    $manager->impersonate(10, 'web', 5, 'admin');
+
+    expect($manager->getActorUserId())->toBe(5)
+        ->and($manager->getActorAuthGuard())->toBe('admin');
+});

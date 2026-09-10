@@ -10,14 +10,15 @@ use Illuminate\Foundation\Application;
 use Illuminate\Session\SessionManager;
 use Illuminate\Contracts\Auth\UserProvider;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Motomedialab\Impersonate\Services\ActorResolver;
 use Motomedialab\Impersonate\Actions\EndImpersonation;
 use Motomedialab\Impersonate\Contracts\CanImpersonate;
 use Motomedialab\Impersonate\Actions\BeginImpersonation;
 use Motomedialab\Impersonate\Actions\DetermineReturnUrl;
 use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
 use Motomedialab\Impersonate\Actions\DetermineRedirectUrl;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Exceptions\ImpersonationException;
+use Motomedialab\Impersonate\ValueObjects\ImpersonationSession;
 use Motomedialab\Impersonate\Actions\ValidateImpersonationSession;
 
 final class ImpersonationManager
@@ -39,24 +40,50 @@ final class ImpersonationManager
 
     public function isImpersonating(): bool
     {
-        return is_numeric($this->getUserId());
+        return $this->getSession() !== null;
     }
 
     public function getUserId(): ?int
     {
-        $data = $this->getSessionData();
-
-        return array_key_exists(1, $data ?? []) ? (int) $data[1] : null;
+        return $this->getSession()?->targetId;
     }
 
     public function getAuthGuard(): ?string
     {
-        return $this->getSessionData()[0] ?? null;
+        return $this->getSession()?->targetGuard;
     }
 
-    public function impersonate(int $impersonationId, string $guard): void
+    public function getActorUserId(): ?int
     {
-        $this->session()->put($this->impersonationKey, $guard.'::'.$impersonationId);
+        return $this->getSession()?->actorId;
+    }
+
+    public function getActorAuthGuard(): ?string
+    {
+        return $this->getSession()?->actorGuard;
+    }
+
+    public function getSession(): ?ImpersonationSession
+    {
+        try {
+            $data = $this->session()->get($this->impersonationKey);
+
+            return ImpersonationSession::fromSession($data);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function impersonate(int $impersonationId, string $guard, ?int $actorId = null, ?string $actorGuard = null): void
+    {
+        $impersonationSession = new ImpersonationSession(
+            targetId: $impersonationId,
+            targetGuard: $guard,
+            actorId: $actorId,
+            actorGuard: $actorGuard,
+        );
+
+        $this->session()->put($this->impersonationKey, $impersonationSession->toArray());
         auth($guard)->onceUsingId($impersonationId);
     }
 
@@ -85,21 +112,27 @@ final class ImpersonationManager
     }
 
     public function beginImpersonation(
-        CanImpersonate|ImpersonatableUser $actor,
-        int|CanBeImpersonated|ImpersonatableUser $target,
-        ?string $guard = null
+        CanImpersonate $actor,
+        int|CanBeImpersonated $target,
+        ?string $guard = null,
+        ?string $actorGuard = null,
     ): void {
         $guard ??= config('auth.defaults.guard');
 
-        $targetUser = $target instanceof CanBeImpersonated || $target instanceof ImpersonatableUser
+        $targetUser = $target instanceof CanBeImpersonated
             ? $target
             : $this->findUser($target, $guard);
 
-        if (! $targetUser instanceof CanBeImpersonated && ! $targetUser instanceof ImpersonatableUser) {
+        if (! $targetUser instanceof CanBeImpersonated) {
             throw new ImpersonationException('The provided user cannot be impersonated');
         }
 
-        $this->app->make(BeginImpersonation::class)($actor, $targetUser, $guard);
+        $this->app->make(BeginImpersonation::class)($actor, $targetUser, $guard, $actorGuard);
+    }
+
+    public function findActorGuard(Authenticatable $actor): string
+    {
+        return $this->app->make(ActorResolver::class)->resolveGuard($actor);
     }
 
     public function findUser(int $id, ?string $guard = null): ?Authenticatable
@@ -139,31 +172,15 @@ final class ImpersonationManager
     }
 
     public function getRedirectUrl(
-        CanBeImpersonated|ImpersonatableUser $target,
-        CanImpersonate|ImpersonatableUser $actor
+        CanBeImpersonated $target,
+        CanImpersonate $actor
     ): string {
         return $this->app->make(DetermineRedirectUrl::class)($target, $actor);
     }
 
-    public function getReturnUrl(CanImpersonate|ImpersonatableUser $actor): string
+    public function getReturnUrl(CanImpersonate $actor): string
     {
         return $this->app->make(DetermineReturnUrl::class)($actor);
-    }
-
-    /**
-     * @return array<int, string>|null
-     */
-    private function getSessionData(): ?array
-    {
-        try {
-            $data = $this->session()->get($this->impersonationKey);
-
-            return empty($data) ? null : explode('::', (string) $data);
-        } catch (\Throwable) {
-            //
-        }
-
-        return null;
     }
 
     private function session(): SessionManager

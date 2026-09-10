@@ -92,9 +92,6 @@ class Customer extends Authenticatable implements CanBeImpersonated
 }
 ```
 
-> [!NOTE]
-> **Backwards Compatibility**: The previous unified `Motomedialab\Impersonate\Contracts\ImpersonatableUser` contract is deprecated, but remains fully supported for existing applications.
-
 ---
 
 ## 🚀 Utilisation
@@ -245,6 +242,55 @@ Because impersonation is highly sensitive, the package dispatches events when se
 
 ---
 
+## 🆙 Upgrading from v1 to v2
+
+### Breaking Changes
+
+#### 1. Split Contracts
+In v1, a single `Motomedialab\Impersonate\Contracts\ImpersonatableUser` contract was used for both actors and target users. In v2, this has been removed and split into two distinct, single-responsibility contracts:
+- `Motomedialab\Impersonate\Contracts\CanImpersonate`: Implemented by user models authorised to initiate impersonation (e.g., `Admin`, `Staff`). Requires `canImpersonate(CanBeImpersonated $user): bool`.
+- `Motomedialab\Impersonate\Contracts\CanBeImpersonated`: Implemented by user models eligible for impersonation (e.g., `User`, `Customer`). Requires `canBeImpersonatedBy(CanImpersonate $user): bool`.
+
+If your model previously implemented `ImpersonatableUser`, update its interfaces and method signatures:
+
+```diff
+- use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
++ use Motomedialab\Impersonate\Contracts\CanImpersonate;
++ use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
+
+- class User extends Authenticatable implements ImpersonatableUser
++ class User extends Authenticatable implements CanImpersonate, CanBeImpersonated
+  {
+-     public function canImpersonate(ImpersonatableUser $user): bool
++     public function canImpersonate(CanBeImpersonated $user): bool
+      {
+          return $this->is_admin;
+      }
+
+-     public function canBeImpersonatedBy(ImpersonatableUser $user): bool
++     public function canBeImpersonatedBy(CanImpersonate $user): bool
+      {
+          return ! $this->is_admin;
+      }
+  }
+```
+
+#### 2. Event Signatures
+The constructor parameter types on `ImpersonateBegun` and `ImpersonateEnded` events have been updated:
+- `ImpersonateBegun`: `$user` is now typed as `CanBeImpersonated` and `$impersonatedBy` is typed as `CanImpersonate`.
+- `ImpersonateEnded`: `$user` is now typed as `CanBeImpersonated`.
+
+#### 3. Configurable Route Middleware & Multi-Guard
+If your application uses custom authentication guards for administrators (such as `admin` or `staff`), you can now customise the route middleware in `config/impersonate.php`:
+```php
+'route_middleware' => [
+    'web',
+    'auth:admin',
+],
+```
+
+---
+
 ## 🧪 Testing
 
 To run the package test suite, ensure you have installed the development dependencies and run:
@@ -258,3 +304,4 @@ composer test
 ## 📄 Licence
 
 This package is open-source software licensed under the [MIT Licence](LICENSE).
+

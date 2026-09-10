@@ -6,7 +6,6 @@ namespace Motomedialab\Impersonate\Actions;
 
 use Motomedialab\Impersonate\Events\ImpersonateEnded;
 use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Managers\ImpersonationManager;
 
 final readonly class EndImpersonation
@@ -18,13 +17,15 @@ final readonly class EndImpersonation
 
     public function __invoke(): void
     {
-        $targetId = $this->manager->getUserId();
+        $userId = $this->manager->getUserId();
         $guard = $this->manager->getAuthGuard();
 
-        $user = $targetId !== null ? $this->manager->findUser($targetId, $guard) : null;
+        if ($userId !== null && $guard !== null) {
+            $user = $this->manager->findUser($userId, $guard);
 
-        if ($user instanceof CanBeImpersonated || $user instanceof ImpersonatableUser) {
-            event(new ImpersonateEnded($user));
+            if ($user instanceof CanBeImpersonated) {
+                event(new ImpersonateEnded($user));
+            }
         }
 
         $this->manager->clearSession();

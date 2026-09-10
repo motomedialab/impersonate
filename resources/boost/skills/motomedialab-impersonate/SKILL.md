@@ -89,9 +89,6 @@ class Customer extends Authenticatable implements CanBeImpersonated
 }
 ```
 
-> [!NOTE]
-> **Backwards Compatibility**: The legacy `Motomedialab\Impersonate\Contracts\ImpersonatableUser` contract is deprecated, but remains supported for existing applications. Always use `CanImpersonate` and `CanBeImpersonated` in new code.
-
 ---
 
 ## Routing & HTTP Endpoints

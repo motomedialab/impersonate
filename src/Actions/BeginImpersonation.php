@@ -4,27 +4,29 @@ declare(strict_types=1);
 
 namespace Motomedialab\Impersonate\Actions;
 
+use Motomedialab\Impersonate\Services\ActorResolver;
 use Motomedialab\Impersonate\Events\ImpersonateBegun;
 use Motomedialab\Impersonate\Contracts\CanImpersonate;
 use Motomedialab\Impersonate\Contracts\CanBeImpersonated;
-use Motomedialab\Impersonate\Contracts\ImpersonatableUser;
 use Motomedialab\Impersonate\Managers\ImpersonationManager;
 use Motomedialab\Impersonate\Exceptions\ImpersonationException;
 
 final readonly class BeginImpersonation
 {
-    public function __construct(private ImpersonationManager $manager)
-    {
-        //
+    public function __construct(
+        private ImpersonationManager $manager,
+        private ActorResolver $actorResolver,
+    ) {
     }
 
     /**
      * @throws ImpersonationException
      */
     public function __invoke(
-        CanImpersonate|ImpersonatableUser $actor,
-        CanBeImpersonated|ImpersonatableUser $target,
-        ?string $guard = null
+        CanImpersonate $actor,
+        CanBeImpersonated $target,
+        ?string $guard = null,
+        ?string $actorGuard = null,
     ): void {
         $guard ??= config('auth.defaults.guard');
 
@@ -41,7 +43,12 @@ final readonly class BeginImpersonation
         }
 
         $this->manager->setReferrer(url()->previous());
-        $this->manager->impersonate((int) $target->getAuthIdentifier(), $guard);
+        $this->manager->impersonate(
+            (int) $target->getAuthIdentifier(),
+            $guard,
+            (int) $actor->getAuthIdentifier(),
+            $actorGuard ?? $this->actorResolver->resolveGuard($actor)
+        );
 
         event(new ImpersonateBegun($target, $actor));
     }
