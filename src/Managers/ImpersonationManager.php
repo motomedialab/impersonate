@@ -128,8 +128,13 @@ final class ImpersonationManager
             $guard = (string) $guard;
             $guardInstance = Auth::guard($guard);
 
-            if ($guardInstance->check() && $guardInstance->id() === $actor->getAuthIdentifier()) {
-                return $guard;
+            if ($guardInstance->check()) {
+                $guardUser = $guardInstance->user();
+                if ($guardUser !== null
+                    && get_class($guardUser) === get_class($actor)
+                    && $guardUser->getAuthIdentifier() === $actor->getAuthIdentifier()) {
+                    return $guard;
+                }
             }
         }
 

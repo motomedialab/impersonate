@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Route;
 use Motomedialab\Impersonate\Controllers\ImpersonationController;
 
-Route::middleware(['web', 'auth'])->group(function () {
+Route::middleware(config('impersonate.route_middleware', ['web', 'auth']))->group(function () {
     Route::post('impersonate/end', [ImpersonationController::class, 'end'])
         ->name('impersonate.end');
 

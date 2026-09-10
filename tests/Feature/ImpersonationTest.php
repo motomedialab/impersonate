@@ -124,6 +124,49 @@ it('prevents impersonating a user that cannot be impersonated', function () {
         ->assertSessionMissing('impersonationId');
 });
 
+it('rejects an invalid actor_guard when beginning impersonation', function () {
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $user->id, 'actor_guard' => 'nonexistent_actor_guard']))
+        ->assertSessionHasErrors(['error' => 'The specified actor guard does not exist.']);
+});
+
+it('automatically detects actor on secondary guard when beginning impersonation', function () {
+    config(['auth.guards.custom_admin' => [
+        'driver' => 'session',
+        'provider' => 'users',
+    ]]);
+
+    $admin = User::create([
+        'email' => 'custom-admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'custom-target@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    auth('custom_admin')->login($admin);
+
+    $this->post(route('impersonate.begin', ['id' => $user->id, 'guard' => 'web']))
+        ->assertRedirect('/')
+        ->assertSessionHas('impersonationId', "web::{$user->id}::custom_admin::{$admin->id}");
+});
+
 it('prevents impersonating a target that does not implement impersonation contracts', function () {
     config(['auth.providers.users.model' => NonImpersonatableUser::class]);
 

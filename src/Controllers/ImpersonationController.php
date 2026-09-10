@@ -20,7 +20,30 @@ final class ImpersonationController
             return back()->withErrors(['error' => 'The specified authentication guard does not exist.']);
         }
 
-        $actor = $request->user();
+        $actorGuard = $request->input('actor_guard');
+        if (is_string($actorGuard) && ! array_key_exists($actorGuard, config('auth.guards', []))) {
+            return back()->withErrors(['error' => 'The specified actor guard does not exist.']);
+        }
+
+        $actor = is_string($actorGuard) ? $request->user($actorGuard) : null;
+
+        if ($actor === null) {
+            $actor = $request->user();
+        }
+
+        if (! $actor instanceof CanImpersonate && ! $actor instanceof ImpersonatableUser) {
+            foreach (array_keys(config('auth.guards', [])) as $possibleGuard) {
+                if (auth((string) $possibleGuard)->check()) {
+                    $candidate = auth((string) $possibleGuard)->user();
+                    if ($candidate instanceof CanImpersonate || $candidate instanceof ImpersonatableUser) {
+                        $actor = $candidate;
+                        $actorGuard = (string) $possibleGuard;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (! $actor instanceof CanImpersonate && ! $actor instanceof ImpersonatableUser) {
             return back()->withErrors(['error' => 'The currently authenticated user cannot impersonate.']);
         }
@@ -31,7 +54,7 @@ final class ImpersonationController
         }
 
         try {
-            $manager->beginImpersonation($actor, $target, $guard);
+            $manager->beginImpersonation($actor, $target, $guard, $actorGuard);
         } catch (ImpersonationException $impersonationException) {
             return back()->withErrors(['error' => $impersonationException->getMessage()]);
         }
