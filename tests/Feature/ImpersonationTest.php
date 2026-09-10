@@ -6,39 +6,23 @@ use function Pest\Laravel\actingAs;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use function Pest\Laravel\withSession;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Database\Schema\Blueprint;
+use Motomedialab\Impersonate\Facades\Impersonate;
 use Motomedialab\Impersonate\Tests\Fixtures\User;
 use Motomedialab\Impersonate\Events\ImpersonateBegun;
 use Motomedialab\Impersonate\Events\ImpersonateEnded;
 use Motomedialab\Impersonate\Tests\Fixtures\AdminUser;
+use Motomedialab\Impersonate\Actions\DetermineReturnUrl;
 use Motomedialab\Impersonate\Tests\Fixtures\CustomerUser;
+use Motomedialab\Impersonate\Actions\DetermineRedirectUrl;
 use Motomedialab\Impersonate\Managers\ImpersonationManager;
+use Motomedialab\Impersonate\Tests\Fixtures\CustomRedirectUser;
+use Motomedialab\Impersonate\Actions\ValidateImpersonationSession;
+use Motomedialab\Impersonate\Tests\Fixtures\NonImpersonatableUser;
 
 beforeEach(function () {
-    config(['database.default' => 'sqlite']);
-    config(['database.connections.sqlite' => [
-        'driver' => 'sqlite',
-        'database' => 'file:impersonation_test?mode=memory&cache=shared',
-        'prefix' => '',
-    ]]);
+    Impersonate::flushCallbacks();
 
-    config(['session.driver' => 'array']);
-
-    // Ensure the users table exists for our dummy model
-    Schema::connection('sqlite')->dropIfExists('users');
-    Schema::connection('sqlite')->create('users', function (Blueprint $table) {
-        $table->id();
-        $table->string('email')->unique();
-        $table->string('password');
-        $table->boolean('can_impersonate')->default(true);
-        $table->boolean('can_be_impersonated')->default(true);
-        $table->timestamps();
-    });
-
-    config(['auth.providers.users.model' => User::class]);
-
-    // register a test route to get the currently authenticated user ID.
+    // Register a test route to get the currently authenticated user ID.
     Route::get('test-route', fn () => auth()->id())->middleware('web');
 });
 
@@ -98,7 +82,27 @@ it('prevents impersonation if user cannot impersonate', function () {
 
     actingAs($user1)
         ->post(route('impersonate.begin', ['id' => $user2->id]))
-        ->assertSessionMissing('impersonationId');
+        ->assertSessionMissing('impersonationId')
+        ->assertSessionHasErrors(['error' => 'The actor doesnt have permission to impersonate the target user']);
+});
+
+it('prevents impersonation if actor does not implement impersonation contracts', function () {
+    $nonImpersonatable = NonImpersonatableUser::create([
+        'email' => 'non-actor@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'target-user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($nonImpersonatable)
+        ->post(route('impersonate.begin', ['id' => $user->id]))
+        ->assertSessionMissing('impersonationId')
+        ->assertSessionHasErrors(['error' => 'The currently authenticated user cannot impersonate.']);
 });
 
 it('prevents impersonating a user that cannot be impersonated', function () {
@@ -118,6 +122,27 @@ it('prevents impersonating a user that cannot be impersonated', function () {
     actingAs($admin)
         ->post(route('impersonate.begin', ['id' => $user->id]))
         ->assertSessionMissing('impersonationId');
+});
+
+it('prevents impersonating a target that does not implement impersonation contracts', function () {
+    config(['auth.providers.users.model' => NonImpersonatableUser::class]);
+
+    $nonImpersonatable = NonImpersonatableUser::create([
+        'email' => 'non-impersonatable@example.com',
+        'password' => 'password',
+    ]);
+
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $nonImpersonatable->id]))
+        ->assertSessionMissing('impersonationId')
+        ->assertSessionHasErrors(['error' => 'The target user cannot be impersonated.']);
 });
 
 it('applies impersonation in middleware', function () {
@@ -182,7 +207,7 @@ it('fails validation when current user is not impersonatable', function () {
         'email' => 'user@example.com',
         'password' => 'password',
     ]);
-    $nonImpersonatable = new Motomedialab\Impersonate\Tests\Fixtures\NonImpersonatableUser();
+    $nonImpersonatable = new NonImpersonatableUser();
 
     $manager = app(ImpersonationManager::class);
     $manager->impersonate($user->id, 'web');
@@ -347,4 +372,192 @@ it('prevents impersonating split contract target if canBeImpersonatedBy returns 
     actingAs($admin)
         ->post(route('impersonate.begin', ['id' => $customer->id]))
         ->assertSessionMissing('impersonationId');
+});
+
+it('ignores redirect_to parameter in request for security', function () {
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', [
+            'id' => $user->id,
+            'redirect_to' => '/malicious-target',
+        ]))
+        ->assertRedirect('/');
+});
+
+it('redirects to target model hook impersonationRedirectTo', function () {
+    config(['auth.providers.users.model' => CustomRedirectUser::class]);
+
+    $admin = CustomRedirectUser::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = CustomRedirectUser::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $user->id]))
+        ->assertRedirect('/model-redirect');
+});
+
+it('redirects using registered redirectTo callback', function () {
+    $passedTarget = null;
+    $passedActor = null;
+
+    Impersonate::redirectTo(function ($target, $actor) use (&$passedTarget, &$passedActor) {
+        $passedTarget = $target;
+        $passedActor = $actor;
+
+        return '/callback-redirect';
+    });
+
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $user->id]))
+        ->assertRedirect('/callback-redirect');
+
+    expect($passedTarget?->getAuthIdentifier())->toBe($user->id)
+        ->and($passedActor?->getAuthIdentifier())->toBe($admin->id);
+});
+
+it('redirects to impersonator model hook impersonationReturnTo', function () {
+    $admin = CustomRedirectUser::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $manager = app(ImpersonationManager::class);
+
+    expect($manager->getReturnUrl($admin))->toBe('/model-return');
+});
+
+it('redirects using registered returnTo callback when ending impersonation', function () {
+    Impersonate::returnTo(fn () => '/callback-return');
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    withSession(['impersonationId' => 'web::'.$user->id])
+        ->actingAs($user)
+        ->post(route('impersonate.end'))
+        ->assertRedirect('/callback-return');
+});
+
+it('allows swapping DetermineRedirectUrl action in the container', function () {
+    app()->bind(DetermineRedirectUrl::class, fn () => new class () {
+        public function __invoke($target = null): string
+        {
+            return '/custom-bound-redirect';
+        }
+    });
+
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $user->id]))
+        ->assertRedirect('/custom-bound-redirect');
+});
+
+it('allows swapping DetermineReturnUrl action in the container', function () {
+    app()->bind(DetermineReturnUrl::class, fn () => new class () {
+        public function __invoke($impersonator = null, ?string $fallback = null): string
+        {
+            return '/custom-bound-return';
+        }
+    });
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    withSession(['impersonationId' => 'web::'.$user->id])
+        ->actingAs($user)
+        ->post(route('impersonate.end'))
+        ->assertRedirect('/custom-bound-return');
+});
+
+
+it('allows swapping ValidateImpersonationSession action in the container', function () {
+    app()->bind(ValidateImpersonationSession::class, fn () => new class (app(ImpersonationManager::class)) {
+        public function __construct(private $manager)
+        {
+        }
+        public function __invoke(?Illuminate\Contracts\Auth\Authenticatable $actor): bool
+        {
+            // Custom rule: always reject validation
+            return false;
+        }
+    });
+
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $manager = app(ImpersonationManager::class);
+    $manager->impersonate(999, 'web');
+
+    expect($manager->validateImpersonationSession($admin))->toBeFalse();
+});
+
+it('rejects an invalid guard when beginning impersonation', function () {
+    $admin = User::create([
+        'email' => 'admin@example.com',
+        'password' => 'password',
+    ]);
+
+    $user = User::create([
+        'email' => 'user@example.com',
+        'password' => 'password',
+    ]);
+
+    $this->withoutMiddleware();
+
+    actingAs($admin)
+        ->post(route('impersonate.begin', ['id' => $user->id, 'guard' => 'nonexistent_guard']))
+        ->assertSessionHasErrors(['error' => 'The specified authentication guard does not exist.']);
 });

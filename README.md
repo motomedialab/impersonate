@@ -135,6 +135,84 @@ To stop impersonating and return to the administrator account, you can display a
 
 ---
 
+## 🧭 Customising Redirection Targets
+
+For enhanced security, the package avoids accepting arbitrary redirect destinations from client request payloads. Instead, redirection targets are determined entirely server-side using a clean resolution hierarchy:
+
+### When Beginning Impersonation
+
+1. **Model Hook**: Define an optional `impersonationRedirectTo()` method on the target model implementing `CanBeImpersonated`:
+   ```php
+   class Customer extends Authenticatable implements CanBeImpersonated
+   {
+       public function impersonationRedirectTo(): string
+       {
+           return route('customer.dashboard');
+       }
+   }
+   ```
+
+2. **Dynamic Callback**: Register a closure in a service provider using the `Impersonate` facade:
+   ```php
+   use Motomedialab\Impersonate\Facades\Impersonate;
+
+   Impersonate::redirectTo(function ($target, $actor) {
+       return $target->is_vendor ? '/vendor/portal' : '/dashboard';
+   });
+   ```
+
+3. **Configuration Fallback**: The `redirect_to` setting in `config/impersonate.php` (defaults to `'/'`).
+
+### When Ending Impersonation
+
+1. **Model Hook**: Define an optional `impersonationReturnTo()` method on your administrator model.
+2. **Dynamic Callback**: Register a closure via `Impersonate::returnTo(fn ($actor) => ...)`.
+3. **Captured Referrer**: Automatically returns to the previous URL where impersonation was started.
+4. **Configuration Fallback**: The `return_to` setting in `config/impersonate.php` (defaults to `'/'`).
+
+### ⚡ Invokable Actions & Customisation
+
+The package encapsulates its key lifecycle and business workflows into invokable action classes:
+
+- **`Motomedialab\Impersonate\Actions\BeginImpersonation`**: Validates permissions and initiates an impersonation session between two model instances (ideal for Filament, Nova, or Livewire).
+- **`Motomedialab\Impersonate\Actions\EndImpersonation`**: Dispatches events and cleans up impersonation session keys.
+- **`Motomedialab\Impersonate\Actions\ValidateImpersonationSession`**: Evaluates permissions dynamically on each request via the middleware.
+- **`Motomedialab\Impersonate\Actions\DetermineRedirectUrl`**: Resolves post-login redirection targets.
+- **`Motomedialab\Impersonate\Actions\DetermineReturnUrl`**: Resolves post-exit return destinations.
+
+#### Programmatic Invocation (Filament / Livewire / Commands)
+
+```php
+use App\Models\User;
+use Motomedialab\Impersonate\Actions\BeginImpersonation;
+use Motomedialab\Impersonate\Actions\EndImpersonation;
+
+// Initiate impersonation programmatically
+app(BeginImpersonation::class)(auth()->user(), $targetUser);
+
+// Terminate impersonation programmatically
+app(EndImpersonation::class)();
+```
+
+#### Container Rebinding in Tests & Applications
+
+Because all actions are resolved through Laravel's service container, you can rebind, extend, or mock any action:
+
+```php
+use Motomedialab\Impersonate\Actions\ValidateImpersonationSession;
+
+// Example: Enforce custom session timeouts or tenant verification
+app()->bind(ValidateImpersonationSession::class, fn () => new class {
+    public function __invoke($currentUser): bool
+    {
+        // Custom tenant or multi-factor checks...
+        return true;
+    }
+});
+```
+
+---
+
 ## 🔍 Checking Impersonation State
 
 You can use the `impersonate` singleton/alias to query the current impersonation status:

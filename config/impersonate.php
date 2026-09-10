@@ -29,5 +29,5 @@ return [
     |
     */
     'redirect_to' => '/',
-    'return_to' => null, // null will default to redirecting back
+    'return_to' => null, // null will default to redirecting to the URL where impersonation began
 ];

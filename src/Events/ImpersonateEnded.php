@@ -12,6 +12,5 @@ final class ImpersonateEnded
     public function __construct(
         public CanBeImpersonated|ImpersonatableUser $user,
     ) {
-        //
     }
 }

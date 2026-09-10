@@ -14,6 +14,5 @@ final class ImpersonateBegun
         public CanBeImpersonated|ImpersonatableUser $user,
         public CanImpersonate|ImpersonatableUser $impersonatedBy,
     ) {
-        //
     }
 }

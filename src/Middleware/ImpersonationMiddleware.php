@@ -12,20 +12,20 @@ final class ImpersonationMiddleware
 {
     public function handle(Request $request, Closure $next): mixed
     {
-        /** @var ImpersonationManager $impersonation */
-        $impersonation = resolve('impersonate');
+        /** @var ImpersonationManager $manager */
+        $manager = resolve(ImpersonationManager::class);
 
-        if ($impersonation->isImpersonating()) {
-            $guard = $impersonation->getAuthGuard();
+        if ($manager->isImpersonating()) {
+            $guard = $manager->getAuthGuard();
 
-            if (! $impersonation->validateImpersonationSession($request->user($guard))) {
-                $impersonation->endImpersonation();
+            if (! $manager->validateImpersonationSession($request->user($guard))) {
+                $manager->endImpersonation();
 
                 return $next($request);
             }
 
-            // We apply the impersonation for the duration of this request.
-            $impersonation->impersonate($impersonation->getUserId(), $guard);
+            // apply the impersonation for the duration of this request.
+            $manager->impersonate($manager->getUserId(), $guard);
         }
 
         return $next($request);

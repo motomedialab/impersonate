@@ -6,5 +6,4 @@ namespace Motomedialab\Impersonate\Exceptions;
 
 final class ImpersonationException extends \Exception
 {
-    //
 }
